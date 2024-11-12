@@ -1,15 +1,22 @@
-# functions/extract_and_store.py
+import asyncio
 import datetime
-import json
+import logging
 import os
+from io import BytesIO
 
+import openai
 import pdfplumber
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageFile
 from sqlalchemy.orm import Session
 
 from models.content import Content
 from models.document import Document
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True  # Handle truncated images if they exist in the PDF
+
+logger = logging.getLogger("pdf-extraction")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)  # Ensure cache directory exists
@@ -18,6 +25,27 @@ os.makedirs(CACHE_DIR, exist_ok=True)  # Ensure cache directory exists
 def get_cache_path(pdf_path):
     pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
     return os.path.join(CACHE_DIR, f"{pdf_name}_cache.json")
+
+async def process_image(img, page_num):
+    try:
+        # Use OpenAI's vision model (or fallback to pytesseract for OCR)
+        img_bytes = BytesIO()
+        img.save(img_bytes, format="PNG")
+        img_bytes.seek(0)
+
+        try:
+            response = openai.images.create(
+                file=img_bytes,
+                model="openai-vision",  # Replace with the specific OpenAI vision model if available
+                prompt="Describe this image content in the context of HR onboarding."
+            )
+            return f"Page {page_num} Image: {response['data'][0]['text']}"
+        except Exception as e:
+            logger.warning(f"OpenAI Vision failed; using OCR for image on page {page_num}. Error: {e}")
+            return f"Page {page_num} Image (OCR): {pytesseract.image_to_string(img)}"
+    except Exception as e:
+        logger.error(f"Failed to process image on page {page_num}: {e}")
+        return ""
 
 async def extract_and_store_pdf_content(pdf_path: str, title: str, db: Session):
     # Add a new entry in the Document table
@@ -30,27 +58,40 @@ async def extract_and_store_pdf_content(pdf_path: str, title: str, db: Session):
     db.commit()
     db.refresh(new_document)  # Get the ID of the newly inserted document
 
-    # Extract content from the PDF
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_number, page in enumerate(pdf.pages, start=1):
-            text_content = page.extract_text() or ""
-            
-            # Extract images and apply OCR
-            images = []
-            for img_obj in page.images:
-                img = page.within_bbox((img_obj["x0"], img_obj["top"], img_obj["x1"], img_obj["bottom"])).to_image()
-                ocr_text = pytesseract.image_to_string(img)
-                images.append(ocr_text)
-            
-            # Create a new Content entry for each page
-            new_content = Content(
-                document_id=new_document.id,
-                page_number=page_number,
-                text_content=text_content,
-                image_content="\n".join(images)
-            )
+    # If cache does not exist, proceed to extract data
+    all_text = ""
+    image_descriptions = []
 
-            db.add(new_content)
+    with pdfplumber.open(pdf_path) as pdf:
+        image_tasks = []
+        for page_num, page in enumerate(pdf.pages[:5], start=1):  # Limit to first 5 pages
+            page_text = page.extract_text() or ""
+            all_text += page_text + "\n"
+            
+            # Extract images
+            for img_obj in page.images:
+                try:
+                    # Get image data
+                    x0, top, x1, bottom = img_obj["x0"], img_obj["top"], img_obj["x1"], img_obj["bottom"]
+                    image_data = page.within_bbox((x0, top, x1, bottom)).to_image().original
+
+                    # Append the coroutine to image_tasks
+                    image_tasks.append(process_image(image_data, page_num))
+                except Exception as e:
+                    logger.error(f"Error extracting image on page {page_num}: {e}")
+
+        # Run all image tasks concurrently
+        image_descriptions = await asyncio.gather(*image_tasks)
+
+        # Create a new Content entry for each page
+        new_content = Content(
+            document_id=new_document.id,
+            page_number=1,
+            text_content=all_text,
+            image_content="\n".join(image_descriptions)
+        )
+
+        db.add(new_content)
 
     # Commit all changes at once
     db.commit()

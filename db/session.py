@@ -11,6 +11,6 @@ engine = create_engine(DATABASE_URL, echo=True)
 # Create session factory and scoped session
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
-# Initialize the database with all tables
-def init_db():
-    Base.metadata.create_all(bind=engine)
+# # Initialize the database with all tables
+# def init_db():
+#     Base.metadata.create_all(bind=engine)

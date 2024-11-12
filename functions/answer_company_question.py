@@ -29,14 +29,35 @@ def get_cache_path(pdf_path):
     pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
     return os.path.join(CACHE_DIR, f"{pdf_name}_cache.json")
 
+async def process_image(img, page_num):
+    try:
+        # Use OpenAI's vision model (or fallback to pytesseract for OCR)
+        img_bytes = BytesIO()
+        img.save(img_bytes, format="PNG")
+        img_bytes.seek(0)
+
+        try:
+            response = openai.images.create(
+                file=img_bytes,
+                model="openai-vision",  # Replace with the specific OpenAI vision model if available
+                prompt="Describe this image content in the context of HR onboarding."
+            )
+            return f"Page {page_num} Image: {response['data'][0]['text']}"
+        except Exception as e:
+            logger.warning(f"OpenAI Vision failed; using OCR for image on page {page_num}. Error: {e}")
+            return f"Page {page_num} Image (OCR): {pytesseract.image_to_string(img)}"
+    except Exception as e:
+        logger.error(f"Failed to process image on page {page_num}: {e}")
+        return ""
+
 async def extract_images_from_pdf(pdf_path):
     cache_path = get_cache_path(pdf_path)
     
-    # Check if cached data exists
-    if os.path.exists(cache_path):
-        logger.info(f"Loading cached content from {cache_path}")
-        with open(cache_path, "r") as cache_file:
-            return json.load(cache_file)
+    # # Check if cached data exists
+    # if os.path.exists(cache_path):
+    #     logger.info(f"Loading cached content from {cache_path}")
+    #     with open(cache_path, "r") as cache_file:
+    #         return json.load(cache_file)
         
     # If cache does not exist, proceed to extract data
     all_text = ""
@@ -65,11 +86,12 @@ async def extract_images_from_pdf(pdf_path):
 
     # Combine extracted text and images
     content = {"text": all_text, "images": image_descriptions}
+    print('content in extract_images_from_pdf:', content)
 
     # Save extracted content to cache
-    with open(cache_path, "w") as cache_file:
-        json.dump(content, cache_file)
-        logger.info(f"Cached content saved to {cache_path}")
+    # with open(cache_path, "w") as cache_file:
+    #     json.dump(content, cache_file)
+    #     logger.info(f"Cached content saved to {cache_path}")
 
     return content
 
@@ -85,7 +107,7 @@ class AnswerCompanyQuestion(llm.FunctionContext):
         """Answers questions based on the public holiday of PALO IT company."""
         logger.info(f"Answering question: {question}")
 
-        pdf_path = "assets/pdf/company/Palo_IT_2024_Public Holiday.pdf"
+        pdf_path = "assets/pdf/company/Palo_IT_2024_Public_Holiday.pdf"
 
         # Extract content from PDF or get from cache
         content = await extract_images_from_pdf(pdf_path)

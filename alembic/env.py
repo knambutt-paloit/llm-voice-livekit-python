@@ -1,13 +1,18 @@
 # alembic/env.py
 import os
+import sys
 from logging.config import fileConfig
 
-from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
+
 # Load .env variables
 load_dotenv()
+
+# Add project root to the path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Set up Alembic Config
 config = context.config
@@ -19,7 +24,7 @@ if not database_url:
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Import models for metadata
-from .models import Base  # type: ignore # Adjust if necessary
+from models import Base  # type: ignore # Adjust if necessary
 
 target_metadata = Base.metadata  # Adjust if necessary
 

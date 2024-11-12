@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Text
+from sqlalchemy import Column, ForeignKey, Integer, LargeBinary, Text
 from sqlalchemy.orm import relationship
 
 from . import Base
@@ -12,7 +12,8 @@ class Content(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), index=True)
     page_number = Column(Integer, index=True)
     text_content = Column(Text)
-    image_content = Column(Text)  # Store OCR result from images as text
-    
+    image_content = Column(LargeBinary, nullable=True)  # BYTEA equivalent
+    embedding = Column(LargeBinary, nullable=True)  # BYTEA equivalent
+
     # Establish relationship with Document
     document = relationship("Document", back_populates="contents")
