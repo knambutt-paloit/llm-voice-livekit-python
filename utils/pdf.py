@@ -27,22 +27,16 @@ def get_cache_path(pdf_path):
     return os.path.join(CACHE_DIR, f"{pdf_name}_cache.json")
 
 async def process_image(img, page_num):
+    """Process an image using OCR."""
     try:
-        # Use OpenAI's vision model (or fallback to pytesseract for OCR)
+        # Convert image to bytes
         img_bytes = BytesIO()
         img.save(img_bytes, format="PNG")
         img_bytes.seek(0)
-
-        try:
-            response = openai.images.create(
-                file=img_bytes,
-                model="openai-vision",  # Replace with the specific OpenAI vision model if available
-                prompt="Describe this image content in the context of HR onboarding."
-            )
-            return f"Page {page_num} Image: {response['data'][0]['text']}"
-        except Exception as e:
-            logger.warning(f"OpenAI Vision failed; using OCR for image on page {page_num}. Error: {e}")
-            return f"Page {page_num} Image (OCR): {pytesseract.image_to_string(img)}"
+        
+        # Use pytesseract for OCR
+        ocr_text = pytesseract.image_to_string(img)
+        return f"Page {page_num} Image (OCR): {ocr_text}"
     except Exception as e:
         logger.error(f"Failed to process image on page {page_num}: {e}")
         return ""
@@ -71,7 +65,7 @@ async def extract_and_store_pdf_content(pdf_path: str, title: str, db: Session):
             # Extract images
             for img_obj in page.images:
                 try:
-                    # Get image data
+                    # Get image data from bounding box
                     x0, top, x1, bottom = img_obj["x0"], img_obj["top"], img_obj["x1"], img_obj["bottom"]
                     image_data = page.within_bbox((x0, top, x1, bottom)).to_image().original
 

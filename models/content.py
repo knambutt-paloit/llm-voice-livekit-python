@@ -12,8 +12,7 @@ class Content(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), index=True)
     page_number = Column(Integer, index=True)
     text_content = Column(Text)
-    image_content = Column(LargeBinary, nullable=True)  # BYTEA equivalent
-    embedding = Column(LargeBinary, nullable=True)  # BYTEA equivalent
+    image_content = Column(Text, nullable=True)
 
     # Establish relationship with Document
     document = relationship("Document", back_populates="contents")
